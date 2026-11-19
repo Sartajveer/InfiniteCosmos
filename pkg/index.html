@@ -474,7 +474,7 @@ function addTiles2(lat,lon,z,half,rank,kind){const g0=cityGen,n=Math.pow(2,z),lr
  for(let dx=-half;dx<=half;dx++)for(let dz=-half;dz<=half;dz++){const tx=tx0+dx,ty=ty0+dz;if(ty<0||ty>=n)continue;const X=((tx%n)+n)%n;
   const mat=new THREE.MeshBasicMaterial({color:ref?0xffffff:0x56604f,toneMapped:false,transparent:ref,opacity:ref?0:1,depthWrite:!ref,polygonOffset:rank>0,polygonOffsetFactor:-rank*2,polygonOffsetUnits:-rank*2}),m=new THREE.Mesh(new THREE.PlaneGeometry(size,size),mat);
   m.rotation.x=-Math.PI/2;m.position.set((tx+.5-xf)*size,rank*.1,(ty+.5-yf)*size);cityGroup.add(m);if(!ref)tilesTotal++;
-  TL.load(uf(z,X,ty),t=>{t.encoding=THREE.sRGBEncoding;t.anisotropy=8;mat.map=t;mat.color.set(0xffffff);if(ref)mat.opacity=1;mat.needsUpdate=true;if(!ref&&g0===cityGen)tilesOk++},undefined,()=>{if(!ref&&g0===cityGen){tilesBad++;checkTiles()}})}}
+  loadTile(uf(z,X,ty),im=>{const t=new THREE.Texture(im);t.needsUpdate=true;t.encoding=THREE.sRGBEncoding;t.anisotropy=8;mat.map=t;mat.color.set(0xffffff);if(ref)mat.opacity=1;mat.needsUpdate=true;if(!ref&&g0===cityGen)tilesOk++},undefined,()=>{if(!ref&&g0===cityGen){tilesBad++;checkTiles()}})}}
 function visitCity(i,keep){lastCity=i;cityGen++;const c=CITIES[i];enterCity();clearCity();const lat=c[3],lon=c[4],alt=c[6]||1500;
  attr.textContent=mapStyle===2?"Map © OpenStreetMap contributors © CARTO":PROVS[prov][2]+(mapStyle===1?" · roads © Esri":"");
  CITYI.n=c[0];CITYI.t=c[1];CITYI.L=["Country",c[6]?"Location":"Population","Coordinates","Tip"];
@@ -513,7 +513,7 @@ function loadBuildings(lat,lon){if(!bld3D)return;const key=lat+","+lon,gen=cityG
   q='[out:json][timeout:25];way["building"]('+(lat-dl)+','+(lon-dn)+','+(lat+dl)+','+(lon+dn)+');out geom '+(LOW0?1500:6000)+';',
   urls=["https://overpass-api.de/api/interpreter?data=","https://overpass.kumi.systems/api/interpreter?data="];
  l.style.display="";l.textContent="Loading 3D buildings…";
- const tryU=k=>fetch(urls[k]+encodeURIComponent(q)).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{bCache[key]=j.elements||[];l.style.display="none";done(bCache[key])}).catch(()=>{if(k<urls.length-1)tryU(k+1);else{l.textContent="3D buildings unavailable here";setTimeout(()=>{l.style.display="none"},5000)}});
+ const tryU=k=>fetch(PX(urls[k]+encodeURIComponent(q))).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{bCache[key]=j.elements||[];l.style.display="none";done(bCache[key])}).catch(()=>{if(k<urls.length-1)tryU(k+1);else{l.textContent="3D buildings unavailable here";setTimeout(()=>{l.style.display="none"},5000)}});
  tryU(0)}
 const BI=["3D buildings: On",()=>setBld(!bld3D)];
 function setBld(on){bld3D=on;BI[0]="3D buildings: "+(on?"On":"Off");if(bldMesh){cityGroup.remove(bldMesh);bldMesh.geometry.dispose();bldMesh.material.dispose();bldMesh=null}
@@ -532,6 +532,21 @@ function checkTiles(){if(tilesOk>0||tilesBad<tilesTotal)return;const l=document.
  const why=window.self!==window.top?"This page is embedded in a preview, which blocks outside images. Open your own https:// address instead.":location.protocol==="file:"?"The page was opened from a file. Open it from your https:// address instead.":"The device may be offline, or a network or browser setting blocks the map servers.";
  l.textContent="Couldn’t load map imagery. "+why+" If a map service asks for an API key, press Map key and paste a free MapTiler key.";prov=0;setTimeout(()=>{l.style.display="none"},15000)}
 {const x=document.createElement("button");x.textContent="Map key";x.onclick=()=>{const k=prompt("Paste a free MapTiler API key (cloud.maptiler.com/account/keys). Leave empty to remove it.",MAPKEY);if(k!==null)applyKey(k.trim())};bar.appendChild(x)}
+// Firefox Reality / strict browsers: send the page origin as referrer, optional CORS proxy, and an on-screen connection test
+var PROXY="";try{PROXY=new URLSearchParams(location.search).get("proxy")||localStorage.getItem("mapproxy")||"";if(new URLSearchParams(location.search).get("proxy"))localStorage.setItem("mapproxy",PROXY)}catch(e){}
+function PX(u){return PROXY?PROXY+encodeURIComponent(u):u}
+function loadTile(url,ok,_u,bad){const im=new Image();im.crossOrigin="anonymous";try{im.referrerPolicy="origin"}catch(e){}im.onload=()=>ok(im);im.onerror=()=>{if(bad)bad()};im.src=PX(url)}
+function mapDiag(){const ft=(u,mode)=>{const c=new AbortController(),t=setTimeout(()=>c.abort(),6000);return fetch(PX(u),{mode,cache:"no-store",signal:c.signal}).finally(()=>clearTimeout(t))};
+ const T=[["Esri satellite","https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/3/2/4"],["OpenStreetMap","https://tile.openstreetmap.org/3/4/2.png"],["CARTO streets","https://a.basemaps.cartocdn.com/rastertiles/voyager/3/4/2.png"],["Sentinel-2","https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/3/2/4.jpg"],["Buildings (Overpass)","https://overpass-api.de/api/status"]];
+ return Promise.all(T.map(([n,u])=>ft(u,"cors").then(a=>n+": "+(a.ok?"OK":"HTTP "+a.status)).catch(()=>ft(u,"no-cors").then(()=>n+": reachable but CORS blocked by browser").catch(()=>n+": unreachable (network or browser blocks it)"))))}
+function showDiag(rs){let d=document.getElementById("diag");if(!d){d=document.createElement("div");d.id="diag";d.style.cssText="position:fixed;left:8px;top:44px;max-width:92%;background:rgba(0,0,0,.8);color:#fff;font:12px/1.5 monospace;padding:8px 10px;border-radius:8px;z-index:9;white-space:pre-wrap";d.onclick=()=>{d.style.display="none"};document.body.appendChild(d)}
+ d.style.display="block";d.textContent="Map connection test (tap to close)\n"+rs.join("\n")+(PROXY?"\nUsing proxy":"")}
+function checkTiles(){if(tilesOk>0||tilesBad<tilesTotal)return;const l=document.getElementById("load");l.style.display="";
+ if(prov<PROVS.length-1){prov++;l.textContent="Trying "+PROVS[prov][0]+"…";visitCity(lastCity,true);return}
+ prov=0;l.textContent="Map images are blocked. Running a connection test…";
+ mapDiag().then(rs=>{CITYI.f=rs.join(" · ");draw();showDiag(rs);const cors=rs.some(x=>x.indexOf("CORS")>0),all=rs.every(x=>x.indexOf("unreachable")>0);
+  l.textContent=cors?"Your browser blocks these map servers (cross-origin). See the test result.":all?"The network or browser blocks the map servers. See the test result.":"Map images failed to load. See the test result.";setTimeout(()=>{l.style.display="none"},20000)})}
+{const x=document.createElement("button");x.textContent="Map test";x.onclick=()=>{showDiag(["Testing…"]);mapDiag().then(showDiag)};bar.appendChild(x)}
 // desktop input
 let drag=false,mv=0,lx=0,ly=0;const cv=renderer.domElement;
 cv.addEventListener("pointerdown",e=>{drag=true;mv=0;lx=e.clientX;ly=e.clientY});
