@@ -1,4 +1,4 @@
-const C="solar-vr-v20",PRE=["./","index.html","manifest.webmanifest","icon.svg","https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"];
+const C="solar-vr-v21",PRE=["./","index.html","manifest.webmanifest","icon.svg","https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>Promise.all(PRE.map(u=>fetch(u,{mode:u.startsWith("http")?"no-cors":"same-origin",cache:"reload"}).then(r=>c.put(u,r)).catch(()=>{})))));self.skipWaiting()});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>clients.claim())));
 // network first (always get the newest version), fall back to the saved copy when offline
