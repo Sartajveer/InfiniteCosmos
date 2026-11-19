@@ -547,6 +547,33 @@ function checkTiles(){if(tilesOk>0||tilesBad<tilesTotal)return;const l=document.
  mapDiag().then(rs=>{CITYI.f=rs.join(" · ");draw();showDiag(rs);const cors=rs.some(x=>x.indexOf("CORS")>0),all=rs.every(x=>x.indexOf("unreachable")>0);
   l.textContent=cors?"Your browser blocks these map servers (cross-origin). See the test result.":all?"The network or browser blocks the map servers. See the test result.":"Map images failed to load. See the test result.";setTimeout(()=>{l.style.display="none"},20000)})}
 {const x=document.createElement("button");x.textContent="Map test";x.onclick=()=>{showDiag(["Testing…"]);mapDiag().then(showDiag)};bar.appendChild(x)}
+// lighter 3D buildings: nearby only, closest first, built in small chunks so the browser never freezes; off by default on headsets/phones
+var bldMeshes=[],bldRun=0;if(LOW0){bld3D=false;BI[0]="3D buildings: Off"}
+function clearCity(){const ch=cityGroup.children;for(let i=ch.length-1;i>=0;i--){const m=ch[i];if(!m.isMesh)continue;cityGroup.remove(m);m.geometry.dispose();if(m.material.map)m.material.map.dispose();m.material.dispose()}bldMesh=null;bldMeshes.length=0;bldRun++}
+function buildBuildings(els,lat0,lon0){const cx=111319.5*Math.cos(lat0*Math.PI/180),gen=cityGen,run=++bldRun,pal=[0xcfc8bd,0xbdb6aa,0xd8cfc0,0xa9a79f,0xc9b9a3,0xb7bcc2],col=new THREE.Color(),Ls=new THREE.Vector3(.5,.8,.35).normalize(),list=[];
+ for(const el of els){const g=el.geometry;if(!g||g.length<4||g.length>40)continue;const pts=[];let sx=0,sz=0;
+  for(let i=0;i<g.length-1;i++){const x=(g[i].lon-lon0)*cx,z=-(g[i].lat-lat0)*111319.5;pts.push(new THREE.Vector2(x,z));sx+=x;sz+=z}
+  let A=0;for(let i=0;i<pts.length;i++){const a=pts[i],b=pts[(i+1)%pts.length];A+=a.x*b.y-b.x*a.y}A/=2;if(Math.abs(A)<18)continue;
+  list.push({el,pts,A,d:Math.hypot(sx/pts.length,sz/pts.length)})}
+ list.sort((a,b)=>a.d-b.d);if(list.length>(LOW0?400:2500))list.length=LOW0?400:2500;
+ const total=list.length,l=document.getElementById("load"),mat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,toneMapped:false});let k=0;
+ if(!total){l.style.display="none";return}
+ (function step(){if(gen!==cityGen||run!==bldRun||!cityMode)return;const P=[],C=[],end=Math.min(k+120,total);
+  for(;k<end;k++){const it=list[k],pts=it.pts,el=it.el,t=el.tags||{};let h=parseFloat(t.height);if(!(h>0)){const lv=parseFloat(t["building:levels"]);h=lv>0?lv*3.3:6+(el.id%6)*1.5}h=Math.min(h,300);
+   col.setHex(h>45?0x9fb4c8:pal[el.id%pal.length]);const r=col.r,gr=col.g,bl=col.b;let tri;try{tri=THREE.ShapeUtils.triangulateShape(pts,[])}catch(e){tri=[]}
+   for(const f of tri)for(const q of f){P.push(pts[q].x,h,pts[q].y);C.push(r,gr,bl)}
+   const s=it.A>0?1:-1;for(let i=0;i<pts.length;i++){const a=pts[i],c=pts[(i+1)%pts.length],dx=c.x-a.x,dz=c.y-a.y,len=Math.hypot(dx,dz)||1,sh=.6+.4*Math.max(0,(s*dz/len)*Ls.x+(-s*dx/len)*Ls.z);
+    P.push(a.x,0,a.y,c.x,0,c.y,c.x,h,c.y,a.x,0,a.y,c.x,h,c.y,a.x,h,a.y);for(let q=0;q<6;q++)C.push(r*sh,gr*sh,bl*sh)}}
+  if(P.length){const geo=new THREE.BufferGeometry();geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array(P),3));geo.setAttribute("color",new THREE.BufferAttribute(new Float32Array(C),3));
+   const m=new THREE.Mesh(geo,mat);m.position.y=.6;m.frustumCulled=false;cityGroup.add(m);bldMeshes.push(m)}
+  if(k<total){l.style.display="";l.textContent="Building 3D city… "+Math.round(k/total*100)+"%";setTimeout(step,16)}else{l.style.display="none";if(attr.textContent.indexOf("buildings")<0)attr.textContent+=" · buildings © OpenStreetMap contributors"}})()}
+function loadBuildings(lat,lon){if(!bld3D)return;const key=lat+","+lon+(LOW0?"L":""),gen=cityGen,done=els=>{if(gen===cityGen&&cityMode)buildBuildings(els,lat,lon)};
+ if(bCache[key]){done(bCache[key]);return}
+ const R=LOW0?250:450,l=document.getElementById("load"),q='[out:json][timeout:20];way["building"](around:'+R+','+lat+','+lon+');out geom qt;',urls=["https://overpass-api.de/api/interpreter?data=","https://overpass.kumi.systems/api/interpreter?data="];
+ l.style.display="";l.textContent="Loading 3D buildings…";
+ const tryU=k=>{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),25000);return fetch(PX(urls[k]+encodeURIComponent(q)),{signal:ac.signal}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{clearTimeout(to);bCache[key]=j.elements||[];done(bCache[key])}).catch(()=>{clearTimeout(to);if(k<urls.length-1)tryU(k+1);else{l.textContent="3D buildings unavailable right now (the map still works)";setTimeout(()=>{l.style.display="none"},5000)}})};
+ tryU(0)}
+function setBld(on){bld3D=on;BI[0]="3D buildings: "+(on?"On":"Off");bldRun++;bldMeshes.forEach(m=>{cityGroup.remove(m);m.geometry.dispose()});bldMeshes.length=0;if(on&&cityMode){const c=CITIES[lastCity];loadBuildings(c[3],c[4])}else{document.getElementById("load").style.display="none";drawMenu()}}
 // desktop input
 let drag=false,mv=0,lx=0,ly=0;const cv=renderer.domElement;
 cv.addEventListener("pointerdown",e=>{drag=true;mv=0;lx=e.clientX;ly=e.clientY});
